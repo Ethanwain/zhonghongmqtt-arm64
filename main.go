@@ -88,20 +88,16 @@ func mqttSubscribe() {
 			Fan:     -1,
 		}
 	}
-	mqttClient.Subscribe("zhonghong/+/+/power/set", 1, func(client mqtt.Client, message mqtt.Message) {
-		logrus.Infof("message receive topic:%v payload:%v", message.Topic(), message.Payload())
-		u := buildUnit(message.Topic())
-		u.On = powerCommand(string(message.Payload()))
-		err := setState(u)
-		if err != nil {
-			logrus.WithError(err).Errorf("set power state error u:%+v", u)
-		}
-		message.Ack()
-	})
 	mqttClient.Subscribe("zhonghong/+/+/mode/set", 1, func(client mqtt.Client, message mqtt.Message) {
 		logrus.Infof("message receive topic:%v payload:%v", message.Topic(), message.Payload())
 		u := buildUnit(message.Topic())
-		u.Mode = modeCommand(string(message.Payload()))
+		mode := string(message.Payload())
+		if mode == "off" {
+			u.On = 0
+		} else {
+			u.On = 1
+			u.Mode = modeCommand(mode)
+		}
 		err := setState(u)
 		if err != nil {
 			logrus.WithError(err).Errorf("set mode state error u:%+v", u)
@@ -220,6 +216,7 @@ type unit struct {
 	On      int64  `json:"on"`
 	Mode    int64  `json:"mode"`
 	TempSet string `json:"tempSet"`
+	TempIn  string `json:"tempIn"`
 	Fan     int64  `json:"fan"`
 }
 
@@ -230,17 +227,24 @@ func pushState() error {
 	}
 	for _, u := range list {
 		logrus.Infof("mqtt publish begin oa:%d ia:%d", u.Oa, u.Ia)
-		err = mqttPublish(fmt.Sprintf("zhonghong/%d/%d/power/state", u.Oa, u.Ia), powerState(u.On))
-		if err != nil {
-			logrus.WithError(err).Errorf("publish power state error unit:%+v", u)
-		}
-		err = mqttPublish(fmt.Sprintf("zhonghong/%d/%d/mode/state", u.Oa, u.Ia), modeState(u.Mode))
-		if err != nil {
-			logrus.WithError(err).Errorf("publish mode state error unit:%+v", u)
+		if u.On == 0 {
+			err = mqttPublish(fmt.Sprintf("zhonghong/%d/%d/mode/state", u.Oa, u.Ia), "off")
+			if err != nil {
+				logrus.WithError(err).Errorf("publish mode state off error unit:%+v", u)
+			}
+		} else {
+			err = mqttPublish(fmt.Sprintf("zhonghong/%d/%d/mode/state", u.Oa, u.Ia), modeState(u.Mode))
+			if err != nil {
+				logrus.WithError(err).Errorf("publish mode state error unit:%+v", u)
+			}
 		}
 		err = mqttPublish(fmt.Sprintf("zhonghong/%d/%d/temperature/state", u.Oa, u.Ia), u.TempSet)
 		if err != nil {
 			logrus.WithError(err).Errorf("publish temperature state error unit:%+v", u)
+		}
+		err = mqttPublish(fmt.Sprintf("zhonghong/%d/%d/current_temperature/state", u.Oa, u.Ia), u.TempIn)
+		if err != nil {
+			logrus.WithError(err).Errorf("publish current temperature state error unit:%+v", u)
 		}
 		err = mqttPublish(fmt.Sprintf("zhonghong/%d/%d/fan/state", u.Oa, u.Ia), fanModeState(u.Fan))
 		if err != nil {
@@ -286,26 +290,6 @@ func mqttPublish(topic, payload string) error {
 		return errors.Wrap(err, "mqtt publish error")
 	}
 	return nil
-}
-
-func powerCommand(v string) int64 {
-	if v == "on" {
-		return 1
-	} else if v == "off" {
-		return 0
-	} else {
-		return 0
-	}
-}
-
-func powerState(v int64) string {
-	if v == 1 {
-		return "on"
-	} else if v == 0 {
-		return "off"
-	} else {
-		return "off"
-	}
 }
 
 func modeCommand(v string) int64 {
