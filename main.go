@@ -8,32 +8,36 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
-var gwHost string
-var gwPort int64
-var gwUsername string
-var gwPassword string
-
-var mqttHost string
-var mqttPort int64
-var mqttUsername string
-var mqttPassword string
+var config struct {
+	Gateway struct {
+		Host     string
+		Port     int64
+		Username string
+		Password string
+	}
+	MQTT struct {
+		Host     string
+		Port     int64
+		Username string
+		Password string
+	}
+}
 
 var mqttClient mqtt.Client
 
 func main() {
-	initEnv()
-	initMqtt()
+	initConfig()
+	initMQTT()
 	mqttSubscribe()
-
 	for {
 		logrus.Info("push state begin")
 		err := pushState()
@@ -45,24 +49,28 @@ func main() {
 	}
 }
 
-func initEnv() {
-	gwHost = os.Getenv("GW_HOST")
-	gwPort, _ = strconv.ParseInt(os.Getenv("GW_PORT"), 10, 64)
-	gwUsername = os.Getenv("GW_USERNAME")
-	gwPassword = os.Getenv("GW_PASSWORD")
-	mqttHost = os.Getenv("MQTT_HOST")
-	mqttPort, _ = strconv.ParseInt(os.Getenv("MQTT_PORT"), 10, 64)
-	mqttUsername = os.Getenv("MQTT_USERNAME")
-	mqttPassword = os.Getenv("MQTT_PASSWORD")
+func initConfig() {
+	logrus.Info("config load begin")
+	data, err := ioutil.ReadFile("/config.yml")
+	if err != nil {
+		logrus.WithError(err).Error("config read error")
+		panic(err)
+	}
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		logrus.WithError(err).Error("config load error")
+		panic(err)
+	}
+	logrus.Info("config load done")
 }
 
-func initMqtt() {
+func initMQTT() {
 	logrus.Info("mqtt connect begin")
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", mqttHost, mqttPort))
+	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", config.MQTT.Host, config.MQTT.Port))
 	opts.SetClientID(fmt.Sprintf("zhm-%s", uuid.New().String()))
-	opts.SetUsername(mqttUsername)
-	opts.SetPassword(mqttPassword)
+	opts.SetUsername(config.MQTT.Username)
+	opts.SetPassword(config.MQTT.Password)
 	mqttClient = mqtt.NewClient(opts)
 	connectToken := mqttClient.Connect()
 	connectToken.Wait()
@@ -168,7 +176,7 @@ func setState(u *unit) error {
 	}
 	params["idx"] = fmt.Sprintf("%d", idx)
 	logrus.Infof("set device state params:%+v", params)
-	resp, err := gwRequest(params)
+	resp, err := gatewayRequest(params)
 	if err != nil {
 		return errors.Wrap(err, "gateway request error")
 	}
@@ -186,8 +194,8 @@ func setState(u *unit) error {
 	return nil
 }
 
-func gwRequest(params map[string]string) (string, error) {
-	u := fmt.Sprintf("http://%s:%d/cgi-bin/api.html", gwHost, gwPort)
+func gatewayRequest(params map[string]string) (string, error) {
+	u := fmt.Sprintf("http://%s:%d/cgi-bin/api.html", config.Gateway.Host, config.Gateway.Port)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return "", errors.Wrap(err, "create request error")
@@ -197,7 +205,7 @@ func gwRequest(params map[string]string) (string, error) {
 		queries.Add(k, v)
 	}
 	req.URL.RawQuery = queries.Encode()
-	authToken := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%v:%v", gwUsername, gwPassword)))
+	authToken := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%v:%v", config.Gateway.Username, config.Gateway.Password)))
 	req.Header.Add("Authorization", fmt.Sprintf("Basic %v", authToken))
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
@@ -259,7 +267,7 @@ func listUnit() ([]*unit, error) {
 	params := make(map[string]string)
 	params["f"] = "17"
 	params["p"] = "0"
-	resp, err := gwRequest(params)
+	resp, err := gatewayRequest(params)
 	if err != nil {
 		return nil, errors.Wrap(err, "gateway request error")
 	}

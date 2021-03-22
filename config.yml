@@ -1,0 +1,10 @@
+Gateway:
+  Host: '127.0.0.1'
+  Port: 80
+  Username: 'admin'
+  Password: ''
+MQTT:
+  Host: '127.0.0.1'
+  Port: 1883
+  Username: ''
+  Password: ''
