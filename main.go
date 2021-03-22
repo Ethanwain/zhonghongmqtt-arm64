@@ -19,17 +19,17 @@ import (
 
 var config struct {
 	Gateway struct {
-		Host     string
-		Port     int64
-		Username string
-		Password string
-	}
+		Host     string `yaml:"Host"`
+		Port     int64  `yaml:"Port"`
+		Username string `yaml:"Username"`
+		Password string `yaml:"Password"`
+	} `yaml:"Gateway"`
 	MQTT struct {
-		Host     string
-		Port     int64
-		Username string
-		Password string
-	}
+		Host     string `yaml:"Host"`
+		Port     int64  `yaml:"Port"`
+		Username string `yaml:"Username"`
+		Password string `yaml:"Password"`
+	} `yaml:"MQTT"`
 }
 
 var mqttClient mqtt.Client
